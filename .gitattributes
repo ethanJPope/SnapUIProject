@@ -1,0 +1,53 @@
+# Normalize text files to use LF in the repository and convert to CRLF on checkout for Windows
+* text=auto
+
+# Unity YAML files should use LF line endings
+*.unity text eol=lf
+*.prefab text eol=lf
+*.asset text eol=lf
+*.mat text eol=lf
+*.anim text eol=lf
+*.controller text eol=lf
+
+# Treat binary files as binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.psd binary
+*.tga binary
+*.gif binary
+*.wav binary
+*.mp3 binary
+*.ogg binary
+*.fbx binary
+*.obj binary
+*.dll binary
+*.exe binary
+*.zip binary
+*.rar binary
+*.7z binary
+# Unity
+Temp/
+Library/
+obj/
+*.csproj
+*.sln
+EthansNYTGames/Temp/
+
+# Prevent Git from attempting to merge binary files
+*.png -merge
+*.jpg -merge
+*.jpeg -merge
+*.psd -merge
+*.tga -merge
+*.gif -merge
+*.wav -merge
+*.mp3 -merge
+*.ogg -merge
+*.fbx -merge
+*.obj -merge
+*.dll -merge
+*.exe -merge
+*.zip -merge
+*.rar -merge
+*.7z -merge
