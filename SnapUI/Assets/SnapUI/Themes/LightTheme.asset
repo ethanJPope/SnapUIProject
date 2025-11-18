@@ -15,8 +15,8 @@ MonoBehaviour:
   primaryColor: {r: 1, g: 1, b: 1, a: 1}
   secondaryColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
   backgroundColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
-  textColor: {r: 1, g: 1, b: 1, a: 1}
+  textColor: {r: 0.22745098, g: 0.22745098, b: 0.22745098, a: 1}
   accentColor: {r: 0.2, g: 0.5, b: 1, a: 1}
   borderRadius: 8
   shadowStrength: 0.4
-  mainFont: {fileID: 10102, guid: 0000000000000000e000000000000000, type: 0}
+  mainFont: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}

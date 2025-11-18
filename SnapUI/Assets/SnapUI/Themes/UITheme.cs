@@ -1,5 +1,5 @@
 using UnityEngine;
-
+using TMPro;
 [CreateAssetMenu(fileName = "UITheme", menuName = "SnapUI/UI Theme")]
 public class UITheme : ScriptableObject
 {
@@ -15,5 +15,5 @@ public class UITheme : ScriptableObject
     public float shadowStrength = 0.4f;
 
     [Header("Fonts")]
-    public Font mainFont;
+    public TMP_FontAsset  mainFont;
 }

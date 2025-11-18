@@ -19,4 +19,4 @@ MonoBehaviour:
   accentColor: {r: 0.36905533, g: 0, b: 0.8018868, a: 1}
   borderRadius: 8
   shadowStrength: 0.4
-  mainFont: {fileID: 10102, guid: 0000000000000000e000000000000000, type: 0}
+  mainFont: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}

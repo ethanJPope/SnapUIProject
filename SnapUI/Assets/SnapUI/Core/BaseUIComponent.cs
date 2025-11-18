@@ -4,11 +4,6 @@ public abstract class BaseUIComponent : MonoBehaviour
 {
     private bool initialized = false;
 
-    protected virtual void Awake()
-    {
-        RegisterWithThemeManager();
-    }
-
     protected virtual void OnEnable()
     {
         if (!initialized)
@@ -16,7 +11,7 @@ public abstract class BaseUIComponent : MonoBehaviour
             Initialize();
             initialized = true;
         }
-
+        RegisterWithThemeManager();
         RefreshUI();
     }
 
