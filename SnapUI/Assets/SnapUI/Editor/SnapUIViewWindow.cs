@@ -47,15 +47,12 @@ public class SnapUIViewWindow : EditorWindow
         DrawWorkspace();
         HandleInput();
 
-        // Always enforce camera on canvas (Unity may override it)
         if (previewHook != null)
             previewHook.ApplyPreviewCamera();
     }
 
     private void OnDisable()
     {
-        Debug.Log("SnapUI: Window closed. Cleaning preview camera and texture.");
-
         if (previewHook != null)
             previewHook.previewCamera = null;
 
@@ -72,10 +69,6 @@ public class SnapUIViewWindow : EditorWindow
         previewTexture = null;
         cameraInitialized = false;
     }
-
-    // ----------------------------------------------------------------------
-    // CAMERA SETUP
-    // ----------------------------------------------------------------------
 
     private void EnsurePreviewCameraExists()
     {
@@ -103,13 +96,11 @@ public class SnapUIViewWindow : EditorWindow
     {
         if (previewCamera == null)
         {
-            Debug.LogWarning("SnapUI: SetupRenderTexture called early; creating camera now.");
             EnsurePreviewCameraExists();
         }
 
         if (previewCamera == null)
         {
-            Debug.LogError("SnapUI: previewCamera STILL NULL after creation attempt.");
             return;
         }
 
@@ -129,16 +120,10 @@ public class SnapUIViewWindow : EditorWindow
         previewTexture.Create();
         previewCamera.targetTexture = previewTexture;
 
-        Debug.Log("SnapUI: RenderTexture assigned to preview camera.");
     }
-
-    // ----------------------------------------------------------------------
-    // REBUILD BUTTON LOGIC
-    // ----------------------------------------------------------------------
 
     private void RebuildPreviewSystem()
     {
-        Debug.Log("SnapUI: Rebuilding Preview System...");
 
         if (previewCamera != null)
         {
@@ -162,12 +147,7 @@ public class SnapUIViewWindow : EditorWindow
             previewHook.ApplyPreviewCamera();
         }
 
-        Debug.Log("SnapUI: Preview system rebuilt successfully.");
     }
-
-    // ----------------------------------------------------------------------
-    // CANVAS SETUP
-    // ----------------------------------------------------------------------
 
     private void ScanForCanvases()
     {
@@ -189,32 +169,22 @@ public class SnapUIViewWindow : EditorWindow
 
     private void SetTargetCanvas(Canvas canvas)
     {
-        Debug.Log("SnapUI: Selecting canvas: " + canvas);
 
         if (canvas == null) return;
 
         Selection.activeObject = canvas.gameObject;
         targetCanvas = canvas;
 
-        EditorApplication.delayCall += () =>
+        previewHook = targetCanvas.GetComponent<CanvasPreviewHook>();
+        if (previewHook == null)
         {
-            if (targetCanvas == null) return;
+            previewHook = targetCanvas.gameObject.AddComponent<CanvasPreviewHook>();
+        }
 
-            previewHook = targetCanvas.GetComponent<CanvasPreviewHook>();
-            if (previewHook == null)
-            {
-                previewHook = targetCanvas.gameObject.AddComponent<CanvasPreviewHook>();
-                Debug.Log("SnapUI: Added CanvasPreviewHook.");
-            }
+        previewHook.previewCamera = previewCamera;
+        previewHook.ApplyPreviewCamera();
 
-            previewHook.previewCamera = previewCamera;
-            previewHook.ApplyPreviewCamera();
-        };
     }
-
-    // ----------------------------------------------------------------------
-    // GUI
-    // ----------------------------------------------------------------------
 
     private void DrawToolbar()
     {
@@ -246,13 +216,11 @@ public class SnapUIViewWindow : EditorWindow
 
         GUILayout.FlexibleSpace();
 
-        // ⭐ Rebuild Preview Camera Button
         if (GUILayout.Button("Rebuild Preview Camera", EditorStyles.toolbarButton, GUILayout.Width(170)))
         {
             RebuildPreviewSystem();
         }
 
-        // Reset View Button
         if (GUILayout.Button("Reset View", EditorStyles.toolbarButton))
         {
             zoom = 1f;

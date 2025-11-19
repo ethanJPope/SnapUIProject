@@ -21,27 +21,28 @@ public class CanvasPreviewHook : MonoBehaviour
             return;
         }
 
-        // Store the original camera so we can restore later
         originalCamera = canvas.worldCamera;
     }
-
-    /// <summary>
-    /// Forces the canvas to render using the preview camera.
-    /// Called by SnapUIViewWindow every repaint.
-    /// </summary>
-    public void ApplyPreviewCamera()
+    private void Update()
     {
+        if (canvas != null && previewCamera != null && canvas.worldCamera != previewCamera)
+        {
+            ApplyPreviewCamera();
+        }
+    }
+
+
+    public void ApplyPreviewCamera()
+    { 
         if (canvas == null || previewCamera == null)
             return;
 
         canvas.renderMode = RenderMode.ScreenSpaceCamera;
         canvas.worldCamera = previewCamera;
-        canvas.planeDistance = 1;
+        canvas.planeDistance = 0.1f;
+        canvas.sortingOrder = 5000;
     }
 
-    /// <summary>
-    /// Called when the SnapUI window closes, restoring the original camera.
-    /// </summary>
     public void RestoreOriginal()
     {
         if (canvas == null)
