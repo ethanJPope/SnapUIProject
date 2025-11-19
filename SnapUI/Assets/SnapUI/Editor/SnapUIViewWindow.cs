@@ -10,6 +10,12 @@ public class SnapUIViewWindow : EditorWindow
     private const float MinZoom = 0.3f;
     private const float MaxZoom = 2.0f;
 
+    private Rect lastPreviewRect;
+
+    private RectTransform selectedRect;
+    private bool isDragging = false;
+    private Vector2 lastMousePos;
+
     private Canvas[] sceneCanvases;
     private Canvas targetCanvas;
     private CanvasPreviewHook previewHook;
@@ -75,8 +81,6 @@ public class SnapUIViewWindow : EditorWindow
         if (cameraInitialized)
             return;
 
-        Debug.Log("SnapUI: Creating Preview Camera.");
-
         GameObject camObj = new GameObject("SnapUIPreviewCamera");
         camObj.hideFlags = HideFlags.None;
 
@@ -95,14 +99,7 @@ public class SnapUIViewWindow : EditorWindow
     private void SetupRenderTexture()
     {
         if (previewCamera == null)
-        {
-            EnsurePreviewCameraExists();
-        }
-
-        if (previewCamera == null)
-        {
             return;
-        }
 
         if (previewTexture != null)
         {
@@ -119,12 +116,10 @@ public class SnapUIViewWindow : EditorWindow
 
         previewTexture.Create();
         previewCamera.targetTexture = previewTexture;
-
     }
 
     private void RebuildPreviewSystem()
     {
-
         if (previewCamera != null)
         {
             DestroyImmediate(previewCamera.gameObject);
@@ -146,7 +141,6 @@ public class SnapUIViewWindow : EditorWindow
             previewHook.previewCamera = previewCamera;
             previewHook.ApplyPreviewCamera();
         }
-
     }
 
     private void ScanForCanvases()
@@ -160,16 +154,11 @@ public class SnapUIViewWindow : EditorWindow
                 selectedCanvasIndex = 0;
                 SetTargetCanvas(sceneCanvases[selectedCanvasIndex]);
             }
-            else
-            {
-                Debug.LogWarning("SnapUI: No canvases found.");
-            }
         }
     }
 
     private void SetTargetCanvas(Canvas canvas)
     {
-
         if (canvas == null) return;
 
         Selection.activeObject = canvas.gameObject;
@@ -177,13 +166,10 @@ public class SnapUIViewWindow : EditorWindow
 
         previewHook = targetCanvas.GetComponent<CanvasPreviewHook>();
         if (previewHook == null)
-        {
             previewHook = targetCanvas.gameObject.AddComponent<CanvasPreviewHook>();
-        }
 
         previewHook.previewCamera = previewCamera;
         previewHook.ApplyPreviewCamera();
-
     }
 
     private void DrawToolbar()
@@ -217,9 +203,7 @@ public class SnapUIViewWindow : EditorWindow
         GUILayout.FlexibleSpace();
 
         if (GUILayout.Button("Rebuild Preview Camera", EditorStyles.toolbarButton, GUILayout.Width(170)))
-        {
             RebuildPreviewSystem();
-        }
 
         if (GUILayout.Button("Reset View", EditorStyles.toolbarButton))
         {
@@ -241,14 +225,17 @@ public class SnapUIViewWindow : EditorWindow
             float w = deviceResolution.x * zoom * 0.25f;
             float h = w / aspect;
 
-            Rect previewRect = new Rect(
+            lastPreviewRect = new Rect(
                 panOffset.x + (r.width / 2 - w / 2),
                 panOffset.y + (r.height / 2 - h / 2),
                 w, h
             );
 
-            GUI.DrawTexture(previewRect, previewTexture, ScaleMode.StretchToFill);
+            GUI.DrawTexture(lastPreviewRect, previewTexture, ScaleMode.StretchToFill);
         }
+
+        if (selectedRect != null)
+            DrawSelectionOutline(selectedRect);
 
         GUI.EndClip();
     }
@@ -268,6 +255,111 @@ public class SnapUIViewWindow : EditorWindow
             panOffset += e.delta;
             Repaint();
         }
+
+        if (e.type == EventType.MouseDown && e.button == 0)
+            TrySelectUIElement(e.mousePosition);
+
+        if (isDragging && selectedRect != null)
+        {
+            if (e.type == EventType.MouseDrag && e.button == 0)
+            {
+                Vector2 delta = e.mousePosition - lastMousePos;
+                lastMousePos = e.mousePosition;
+                DragUIElement(delta);
+                Repaint();
+            }
+
+            if (e.type == EventType.MouseUp)
+                isDragging = false;
+        }
+    }
+
+    private void DragUIElement(Vector2 mouseDelta)
+    {
+        if (selectedRect == null)
+            return;
+
+        float scaleFactor = targetCanvas.scaleFactor;
+        Vector2 canvasDelta =
+            mouseDelta * (deviceResolution.x / position.width) / scaleFactor;
+
+        canvasDelta.y = -canvasDelta.y;
+
+        selectedRect.anchoredPosition += canvasDelta;
+        EditorUtility.SetDirty(selectedRect);
+    }
+
+    private void DrawSelectionOutline(RectTransform rect)
+    {
+        if (previewCamera == null || previewTexture == null)
+            return;
+
+        Vector3[] corners = new Vector3[4];
+        rect.GetWorldCorners(corners);
+
+        Vector2[] pts = new Vector2[4];
+
+        for (int i = 0; i < 4; i++)
+        {
+            Vector3 screenPoint = previewCamera.WorldToScreenPoint(corners[i]);
+
+            Vector2 guiPoint = new Vector2(
+                lastPreviewRect.x + (screenPoint.x / previewTexture.width) * lastPreviewRect.width,
+                lastPreviewRect.y + lastPreviewRect.height - (screenPoint.y / previewTexture.height) * lastPreviewRect.height
+            );
+
+            pts[i] = guiPoint;
+        }
+
+        Handles.BeginGUI();
+        Handles.color = Color.yellow;
+        Handles.DrawLine(pts[0], pts[1]);
+        Handles.DrawLine(pts[1], pts[2]);
+        Handles.DrawLine(pts[2], pts[3]);
+        Handles.DrawLine(pts[3], pts[0]);
+        Handles.EndGUI();
+    }
+
+    private void TrySelectUIElement(Vector2 mousePos)
+    {
+        if (previewCamera == null || targetCanvas == null)
+            return;
+
+        Vector2 localPos;
+        if (!ConvertToCanvasSpace(mousePos, out localPos))
+            return;
+
+        RectTransform[] rects = targetCanvas.GetComponentsInChildren<RectTransform>(true);
+        RectTransform best = null;
+
+        foreach (var rect in rects)
+        {
+            if (rect == targetCanvas.transform) continue;
+            if (RectTransformUtility.RectangleContainsScreenPoint(rect, localPos, previewCamera))
+                best = rect;
+        }
+
+        selectedRect = best;
+        isDragging = selectedRect != null;
+        lastMousePos = mousePos;
+
+        if (selectedRect != null)
+            Debug.Log("SnapUI: Selected " + selectedRect.name);
+    }
+
+    private bool ConvertToCanvasSpace(Vector2 mousePos, out Vector2 canvasPos)
+    {
+        canvasPos = Vector2.zero;
+        Rect workspace = new Rect(0, 20, position.width, position.height - 20);
+
+        if (!workspace.Contains(mousePos))
+            return false;
+
+        float x = (mousePos.x - workspace.x) / workspace.width;
+        float y = (mousePos.y - workspace.y) / workspace.height;
+
+        canvasPos = new Vector2(x * deviceResolution.x, (1f - y) * deviceResolution.y);
+        return true;
     }
 
     private void ApplyDevicePreset()

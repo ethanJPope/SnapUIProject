@@ -3,7 +3,6 @@ using UnityEngine;
 [ExecuteAlways]
 public class CanvasPreviewHook : MonoBehaviour
 {
-    [Tooltip("Camera used to render the canvas inside the SnapUI View.")]
     public Camera previewCamera;
 
     [HideInInspector]
@@ -17,7 +16,6 @@ public class CanvasPreviewHook : MonoBehaviour
 
         if (canvas == null)
         {
-            Debug.LogError("SnapUI: CanvasPreviewHook must be placed on a Canvas object.");
             return;
         }
 
