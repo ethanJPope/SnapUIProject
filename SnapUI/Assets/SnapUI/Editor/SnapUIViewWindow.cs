@@ -7,14 +7,21 @@ public class SnapUIViewWindow : EditorWindow
     private float zoom = 1f;
     private Vector2 panOffset = Vector2.zero;
 
-    private const float MinZoom = 0.3f;
-    private const float MaxZoom = 2.0f;
+    private const float MinZoom = 0.01f;
+    private const float MaxZoom = 4.0f;
 
+    private Rect workspaceRect;
     private Rect lastPreviewRect;
-
     private RectTransform selectedRect;
     private bool isDragging = false;
     private Vector2 lastMousePos;
+
+    private Color selectedColor = Color.yellow;
+    private Color hierarchyColor = new Color(0.7f, 0.7f, 0.7f);
+
+    private RectTransform lastClickedRect;
+    private double lastClickTime;
+    private const double clickInterval = 0.25;
 
     private Canvas[] sceneCanvases;
     private Canvas targetCanvas;
@@ -25,8 +32,17 @@ public class SnapUIViewWindow : EditorWindow
 
     private bool cameraInitialized = false;
 
-    private Vector2 deviceResolution = new Vector2(1920, 1080);
+    private int[] gridSizes = new int[] { 0, 4, 8, 10, 16, 32, 64 };
+    private string[] gridLabels = new string[] { "No Grid", "GridSize: 4 px", "GridSize: 8 px", "GridSize: 10 px", "GridSize: 16 px", "GridSize: 32 px", "GridSize: 64 px" };
+    private int selectedGridIndex = 0;
 
+    private bool snapToUI = true;
+    private float snapThreshold = 10f;
+
+    private bool showGuideX = false;
+    private bool showGuideY = false;
+
+    private Vector2 deviceResolution = new Vector2(1920, 1080);
     private string[] devicePresets = new string[]
     {
         "PC 1920x1080",
@@ -159,7 +175,8 @@ public class SnapUIViewWindow : EditorWindow
 
     private void SetTargetCanvas(Canvas canvas)
     {
-        if (canvas == null) return;
+        if (canvas == null)
+            return;
 
         Selection.activeObject = canvas.gameObject;
         targetCanvas = canvas;
@@ -200,6 +217,21 @@ public class SnapUIViewWindow : EditorWindow
             SetupRenderTexture();
         }
 
+        int newGrid = EditorGUILayout.Popup(selectedGridIndex, gridLabels, GUILayout.Width(130));
+        if (newGrid != selectedGridIndex)
+        {
+            selectedGridIndex = newGrid;
+            Repaint();
+        }
+
+        bool newSnap = GUILayout.Toggle(
+            snapToUI,
+            snapToUI ? "Smart Align: On" : "Smart Align: Off",
+            EditorStyles.toolbarButton
+        );
+        if (newSnap != snapToUI)
+            snapToUI = newSnap;
+
         GUILayout.FlexibleSpace();
 
         if (GUILayout.Button("Rebuild Preview Camera", EditorStyles.toolbarButton, GUILayout.Width(170)))
@@ -216,8 +248,8 @@ public class SnapUIViewWindow : EditorWindow
 
     private void DrawWorkspace()
     {
-        Rect r = new Rect(0, 20, position.width, position.height - 20);
-        GUI.BeginClip(r);
+        workspaceRect = new Rect(0, 20, position.width, position.height - 20);
+        GUI.BeginClip(workspaceRect);
 
         if (previewTexture != null)
         {
@@ -226,18 +258,60 @@ public class SnapUIViewWindow : EditorWindow
             float h = w / aspect;
 
             lastPreviewRect = new Rect(
-                panOffset.x + (r.width / 2 - w / 2),
-                panOffset.y + (r.height / 2 - h / 2),
-                w, h
+                panOffset.x + (workspaceRect.width / 2f - w / 2f),
+                panOffset.y + (workspaceRect.height / 2f - h / 2f),
+                w,
+                h
             );
 
             GUI.DrawTexture(lastPreviewRect, previewTexture, ScaleMode.StretchToFill);
+
+            if (gridSizes[selectedGridIndex] > 0)
+                DrawGrid(lastPreviewRect, gridSizes[selectedGridIndex]);
         }
 
         if (selectedRect != null)
-            DrawSelectionOutline(selectedRect);
+        {
+            DrawOutline(selectedRect, selectedColor);
+
+            Transform parent = selectedRect.parent;
+
+            if (parent != null && parent != targetCanvas.transform)
+            {
+                RectTransform parentRect = parent as RectTransform;
+                if (parentRect != null)
+                    DrawOutline(parentRect, hierarchyColor);
+
+                foreach (Transform s in parent)
+                {
+                    RectTransform sibling = s as RectTransform;
+                    if (sibling != null && sibling != selectedRect)
+                        DrawOutline(sibling, hierarchyColor);
+                }
+            }
+        }
 
         GUI.EndClip();
+    }
+
+    private void DrawGrid(Rect rect, int gridSize)
+    {
+        if (gridSize <= 0)
+            return;
+
+        Handles.BeginGUI();
+        Handles.color = new Color(0f, 0f, 0f, 0.1f);
+
+        float cellW = (gridSize / deviceResolution.x) * rect.width;
+        float cellH = (gridSize / deviceResolution.y) * rect.height;
+
+        for (float x = rect.x; x <= rect.x + rect.width; x += cellW)
+            Handles.DrawLine(new Vector3(x, rect.yMin), new Vector3(x, rect.yMax));
+
+        for (float y = rect.y; y <= rect.y + rect.height; y += cellH)
+            Handles.DrawLine(new Vector3(rect.xMin, y), new Vector3(rect.xMax, y));
+
+        Handles.EndGUI();
     }
 
     private void HandleInput()
@@ -274,22 +348,158 @@ public class SnapUIViewWindow : EditorWindow
         }
     }
 
+    private bool TryGetPreviewScreenPoint(Vector2 mousePos, out Vector2 previewScreen)
+    {
+        previewScreen = Vector2.zero;
+
+        if (previewCamera == null || previewTexture == null)
+            return false;
+
+        if (!workspaceRect.Contains(mousePos))
+            return false;
+
+        Vector2 localMouse = mousePos - new Vector2(workspaceRect.x, workspaceRect.y);
+
+        if (!lastPreviewRect.Contains(localMouse))
+            return false;
+
+        float normX = (localMouse.x - lastPreviewRect.x) / lastPreviewRect.width;
+        float normY = (localMouse.y - lastPreviewRect.y) / lastPreviewRect.height;
+
+        previewScreen = new Vector2(
+            normX * previewTexture.width,
+            (1f - normY) * previewTexture.height
+        );
+
+        return true;
+    }
+
     private void DragUIElement(Vector2 mouseDelta)
     {
-        if (selectedRect == null)
+        if (selectedRect == null || targetCanvas == null || previewTexture == null)
             return;
 
+        if (lastPreviewRect.width <= 0f || lastPreviewRect.height <= 0f)
+            return;
+
+        Vector2 previewDelta = new Vector2(
+            mouseDelta.x / lastPreviewRect.width * previewTexture.width,
+            -mouseDelta.y / lastPreviewRect.height * previewTexture.height
+        );
+
         float scaleFactor = targetCanvas.scaleFactor;
-        Vector2 canvasDelta =
-            mouseDelta * (deviceResolution.x / position.width) / scaleFactor;
+        Vector2 canvasDelta = previewDelta / scaleFactor;
 
-        canvasDelta.y = -canvasDelta.y;
+        Vector2 newPos = selectedRect.anchoredPosition + canvasDelta;
 
-        selectedRect.anchoredPosition += canvasDelta;
+        int gridSize = gridSizes[selectedGridIndex];
+        if (gridSize > 0)
+        {
+            newPos.x = Mathf.Round(newPos.x / gridSize) * gridSize;
+            newPos.y = Mathf.Round(newPos.y / gridSize) * gridSize;
+        }
+
+        newPos = ApplyUISnapping(newPos, selectedRect);
+
+        selectedRect.anchoredPosition = newPos;
         EditorUtility.SetDirty(selectedRect);
     }
 
-    private void DrawSelectionOutline(RectTransform rect)
+    private Vector2 ApplyUISnapping(Vector2 desiredPos, RectTransform moving)
+    {
+        if (!snapToUI || targetCanvas == null || moving == null)
+            return desiredPos;
+
+        RectTransform parent = moving.parent as RectTransform;
+        if (parent == null)
+            return desiredPos;
+
+        Vector2 originalPos = moving.anchoredPosition;
+
+        moving.anchoredPosition = desiredPos;
+
+        Bounds movingBounds = RectTransformUtility.CalculateRelativeRectTransformBounds(parent, moving);
+
+        float mLeft = movingBounds.min.x;
+        float mRight = movingBounds.max.x;
+        float mMidX = movingBounds.center.x;
+
+        float mBottom = movingBounds.min.y;
+        float mTop = movingBounds.max.y;
+        float mMidY = movingBounds.center.y;
+
+        float bestXDist = snapThreshold + 1f;
+        float bestYDist = snapThreshold + 1f;
+        float bestDeltaX = 0f;
+        float bestDeltaY = 0f;
+
+        RectTransform[] rects = targetCanvas.GetComponentsInChildren<RectTransform>(false);
+
+        for (int i = 0; i < rects.Length; i++)
+        {
+            RectTransform r = rects[i];
+            if (r == null || r == moving || r == targetCanvas.transform)
+                continue;
+
+            Bounds b = RectTransformUtility.CalculateRelativeRectTransformBounds(parent, r);
+
+            float oLeft = b.min.x;
+            float oRight = b.max.x;
+            float oMidX = b.center.x;
+
+            float oBottom = b.min.y;
+            float oTop = b.max.y;
+            float oMidY = b.center.y;
+
+            TrySnapAxis(
+                mLeft, oLeft, ref bestXDist, ref bestDeltaX);
+            TrySnapAxis(
+                mRight, oRight, ref bestXDist, ref bestDeltaX);
+            TrySnapAxis(
+                mMidX, oMidX, ref bestXDist, ref bestDeltaX);
+
+            TrySnapAxis(
+                mLeft, oRight, ref bestXDist, ref bestDeltaX);
+            TrySnapAxis(
+                mRight, oLeft, ref bestXDist, ref bestDeltaX);
+
+            TrySnapAxis(
+                mBottom, oBottom, ref bestYDist, ref bestDeltaY);
+            TrySnapAxis(
+                mTop, oTop, ref bestYDist, ref bestDeltaY);
+            TrySnapAxis(
+                mMidY, oMidY, ref bestYDist, ref bestDeltaY);
+
+            TrySnapAxis(
+                mBottom, oTop, ref bestYDist, ref bestDeltaY);
+            TrySnapAxis(
+                mTop, oBottom, ref bestYDist, ref bestDeltaY);
+        }
+
+        moving.anchoredPosition = originalPos;
+
+        Vector2 result = desiredPos;
+
+        if (bestXDist <= snapThreshold)
+            result.x += bestDeltaX;
+
+        if (bestYDist <= snapThreshold)
+            result.y += bestDeltaY;
+
+        return result;
+    }
+
+    private void TrySnapAxis(float from, float to, ref float bestDist, ref float bestDelta)
+    {
+        float dist = Mathf.Abs(from - to);
+        if (dist < bestDist && dist <= snapThreshold)
+        {
+            bestDist = dist;
+            bestDelta = to - from;
+        }
+    }
+
+    private void DrawOutline(RectTransform rect, Color col)
     {
         if (previewCamera == null || previewTexture == null)
             return;
@@ -312,7 +522,7 @@ public class SnapUIViewWindow : EditorWindow
         }
 
         Handles.BeginGUI();
-        Handles.color = Color.yellow;
+        Handles.color = col;
         Handles.DrawLine(pts[0], pts[1]);
         Handles.DrawLine(pts[1], pts[2]);
         Handles.DrawLine(pts[2], pts[3]);
@@ -325,41 +535,57 @@ public class SnapUIViewWindow : EditorWindow
         if (previewCamera == null || targetCanvas == null)
             return;
 
-        Vector2 localPos;
-        if (!ConvertToCanvasSpace(mousePos, out localPos))
+        Vector2 previewScreen;
+        if (!TryGetPreviewScreenPoint(mousePos, out previewScreen))
             return;
 
-        RectTransform[] rects = targetCanvas.GetComponentsInChildren<RectTransform>(true);
-        RectTransform best = null;
+        double t = EditorApplication.timeSinceStartup;
 
-        foreach (var rect in rects)
+        if (t - lastClickTime < clickInterval && lastClickedRect != null)
         {
-            if (rect == targetCanvas.transform) continue;
-            if (RectTransformUtility.RectangleContainsScreenPoint(rect, localPos, previewCamera))
-                best = rect;
+            Transform p = lastClickedRect.parent;
+
+            if (p != null && p != targetCanvas.transform)
+            {
+                selectedRect = p as RectTransform;
+                lastClickedRect = selectedRect;
+                isDragging = false;
+            }
+
+            lastClickTime = t;
+            Repaint();
+            return;
         }
 
-        selectedRect = best;
-        isDragging = selectedRect != null;
-        lastMousePos = mousePos;
+        lastClickTime = t;
 
-        if (selectedRect != null)
-            Debug.Log("SnapUI: Selected " + selectedRect.name);
-    }
+        RectTransform[] rects = targetCanvas.GetComponentsInChildren<RectTransform>(true);
+        RectTransform hit = null;
 
-    private bool ConvertToCanvasSpace(Vector2 mousePos, out Vector2 canvasPos)
-    {
-        canvasPos = Vector2.zero;
-        Rect workspace = new Rect(0, 20, position.width, position.height - 20);
+        foreach (var r in rects)
+        {
+            if (r == targetCanvas.transform)
+                continue;
 
-        if (!workspace.Contains(mousePos))
-            return false;
+            if (RectTransformUtility.RectangleContainsScreenPoint(r, previewScreen, previewCamera))
+                hit = r;
+        }
 
-        float x = (mousePos.x - workspace.x) / workspace.width;
-        float y = (mousePos.y - workspace.y) / workspace.height;
+        if (hit != null)
+        {
+            selectedRect = hit;
+            lastClickedRect = hit;
+            isDragging = true;
+            lastMousePos = mousePos;
+        }
+        else
+        {
+            selectedRect = null;
+            lastClickedRect = null;
+            isDragging = false;
+        }
 
-        canvasPos = new Vector2(x * deviceResolution.x, (1f - y) * deviceResolution.y);
-        return true;
+        Repaint();
     }
 
     private void ApplyDevicePreset()
