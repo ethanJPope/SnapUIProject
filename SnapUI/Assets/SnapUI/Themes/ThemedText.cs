@@ -21,24 +21,27 @@ public class ThemedText : BaseUIComponent
 
     public override void RefreshUI()
     {
+        if (label == null)
+            label = GetComponent<TMP_Text>();
+        if (label == null)
+            return;
+
         var theme = ThemeManager.ActiveTheme;
 
         switch (colorType)
         {
             case TextColor.Primary:
-                label.color = theme.textColor;
-                break;
             case TextColor.Secondary:
-                label.color = theme.textColor;
-                break;
             case TextColor.Accent:
                 label.color = theme.textColor;
                 break;
         }
 
-        if(theme.mainFont != null)
+        if (theme.mainFont != null)
         {
             label.font = theme.mainFont;
         }
     }
+
+
 }
