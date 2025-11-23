@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2ef4be262aedad34db442c94068a98f0, type: 3}
   m_Name: SnapUISettings
   m_EditorClassIdentifier: Assembly-CSharp::SnapUISettings
-  defaultTheme: {fileID: 11400000, guid: 51e6584e14192154b86ab7f57f9a0c4b, type: 2}
+  defaultTheme: {fileID: 11400000, guid: 1b655dfa3dca7da408b4a3710a39a273, type: 2}
   defaultFont: {fileID: 12800000, guid: f4eec857a4fdf2f43be0e9f3d1a984e7, type: 3}
   animationDuration: 0.25
   enableShadows: 1

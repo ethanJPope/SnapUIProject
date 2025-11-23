@@ -2,10 +2,10 @@ using Mono.Cecil.Cil;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.XR;
 
 public class SnapUIViewWindow : EditorWindow
 {
-
     private float zoom = 1f;
     private Vector2 panOffset = Vector2.zero;
 
@@ -57,12 +57,6 @@ public class SnapUIViewWindow : EditorWindow
     };
     private int selectedGridIndex;
 
-    private struct HandleInfo
-    {
-        public Rect rect;
-        public HandleType type;
-    }
-
     private enum HandleType
     {
         None,
@@ -76,6 +70,16 @@ public class SnapUIViewWindow : EditorWindow
         ResizeLeft,
         Rotate
     }
+
+    private struct HandleInfo
+    {
+        public Rect rect;
+        public HandleType type;
+    }
+
+    private HandleInfo[] handles = new HandleInfo[9];
+    private HandleType activeHandle = HandleType.None;
+    private bool isResizing = false;
 
     private bool snapToUI = true;
     private float snapThreshold = 10f;
@@ -170,6 +174,8 @@ public class SnapUIViewWindow : EditorWindow
         {
             selectedRect = rt;
             lastClickedRect = rt;
+            showGuideX = false;
+            showGuideY = false;
             Repaint();
         }
     }
@@ -417,11 +423,62 @@ public class SnapUIViewWindow : EditorWindow
                         DrawOutline(sibling, hierarchyColor);
                 }
             }
+
+            if (TryGetSelectionGuiRect(out Rect selectionGuiRect))
+            {
+                UpdateHandles(selectionGuiRect);
+                DrawHandles();
+            }
         }
 
         DrawSnapGuides();
 
         GUI.EndClip();
+    }
+
+    private bool TryGetSelectionGuiRect(out Rect guiRect)
+    {
+        guiRect = default;
+
+        if (selectedRect == null || previewCamera == null || previewTexture == null)
+            return false;
+
+        Vector3[] corners = new Vector3[4];
+        selectedRect.GetWorldCorners(corners);
+
+        bool initialized = false;
+        float minX = 0f, maxX = 0f, minY = 0f, maxY = 0f;
+
+        for (int i = 0; i < 4; i++)
+        {
+            Vector3 screenPoint = previewCamera.WorldToScreenPoint(corners[i]);
+
+            Vector2 guiPoint = new Vector2(
+                lastPreviewRect.x + (screenPoint.x / previewTexture.width) * lastPreviewRect.width,
+                lastPreviewRect.y + lastPreviewRect.height -
+                (screenPoint.y / previewTexture.height) * lastPreviewRect.height
+            );
+
+            if (!initialized)
+            {
+                minX = maxX = guiPoint.x;
+                minY = maxY = guiPoint.y;
+                initialized = true;
+            }
+            else
+            {
+                if (guiPoint.x < minX) minX = guiPoint.x;
+                if (guiPoint.x > maxX) maxX = guiPoint.x;
+                if (guiPoint.y < minY) minY = guiPoint.y;
+                if (guiPoint.y > maxY) maxY = guiPoint.y;
+            }
+        }
+
+        if (!initialized)
+            return false;
+
+        guiRect = new Rect(minX, minY, maxX - minX, maxY - minY);
+        return guiRect.width > 0.1f && guiRect.height > 0.1f;
     }
 
     private void DrawGrid(Rect rect, int gridSize)
@@ -528,35 +585,203 @@ public class SnapUIViewWindow : EditorWindow
             Repaint();
         }
 
+        Vector2 mousePos = e.mousePosition;
+        Vector2 localMouse = mousePos - workspaceRect.position;
+
+        if (e.type == EventType.MouseDown && e.button == 0)
+        {
+            for (int i = 0; i < handles.Length; i++)
+            {
+                if (handles[i].type != HandleType.None && handles[i].rect.Contains(localMouse))
+                {
+                    activeHandle = handles[i].type;
+                    isResizing = true;
+                    isDragging = false;
+                    lastMousePos = mousePos;
+                    e.Use();
+                    return;
+                }
+            }
+        }
+
+        if (isResizing && selectedRect != null)
+        {
+            if (e.type == EventType.MouseDrag && e.button == 0)
+            {
+                Vector2 delta = mousePos - lastMousePos;
+                lastMousePos = mousePos;
+
+                ResizeUIElement(delta);
+                Repaint();
+                return;
+            }
+        }
+
+        if (e.type == EventType.MouseUp)
+        {
+            isResizing = false;
+            activeHandle = HandleType.None;
+            isDragging = false;
+            showGuideX = false;
+            showGuideY = false;
+        }
+
         if (e.type == EventType.MouseDrag && e.button == 2)
         {
             panOffset += e.delta;
             Repaint();
         }
 
-        if (e.type == EventType.MouseDown && e.button == 0)
-            TrySelectUIElement(e.mousePosition);
-
-        if (e.type == EventType.MouseUp)
+        if (!isResizing && e.type == EventType.MouseDown && e.button == 0)
         {
-            isDragging = false;
-            showGuideX = false;
-            showGuideY = false;
+            TrySelectUIElement(mousePos);
+            return;
         }
 
         if (isDragging && selectedRect != null)
         {
             if (e.type == EventType.MouseDrag && e.button == 0)
             {
-                Vector2 delta = e.mousePosition - lastMousePos;
-                lastMousePos = e.mousePosition;
+                Vector2 delta = mousePos - lastMousePos;
+                lastMousePos = mousePos;
                 DragUIElement(delta);
                 Repaint();
             }
-
-            if (e.type == EventType.MouseUp)
-                isDragging = false;
         }
+    }
+
+    private void DrawHandles()
+    {
+        Handles.BeginGUI();
+
+        foreach (var h in handles)
+        {
+            if (h.type == HandleType.None)
+                continue;
+
+            Color c = (h.type == HandleType.Rotate)
+                ? new Color(0.4f, 0.8f, 1f)
+                : Color.white;
+
+            EditorGUI.DrawRect(h.rect, c);
+            GUI.Box(h.rect, GUIContent.none);
+        }
+
+        Handles.EndGUI();
+    }
+
+    private void ResizeUIElement(Vector2 mouseDelta)
+    {
+        if (selectedRect == null || previewTexture == null || targetCanvas == null)
+            return;
+
+        Vector2 previewDelta = new Vector2(
+            mouseDelta.x / lastPreviewRect.width * previewTexture.width,
+            -mouseDelta.y / lastPreviewRect.height * previewTexture.height
+        );
+
+        float scaleFactor = targetCanvas.scaleFactor;
+        Vector2 canvasDelta = previewDelta / scaleFactor;
+
+        Vector2 size = selectedRect.sizeDelta;
+        Vector2 pos = selectedRect.anchoredPosition;
+
+        switch (activeHandle)
+        {
+            case HandleType.ResizeRight:
+                size.x += canvasDelta.x;
+                break;
+
+            case HandleType.ResizeLeft:
+                size.x -= canvasDelta.x;
+                pos.x += canvasDelta.x * 0.5f;
+                break;
+
+            case HandleType.ResizeTop:
+                size.y += canvasDelta.y;
+                break;
+
+            case HandleType.ResizeBottom:
+                size.y -= canvasDelta.y;
+                pos.y += canvasDelta.y * 0.5f;
+                break;
+
+            case HandleType.ResizeTopLeft:
+                size.x -= canvasDelta.x;
+                size.y += canvasDelta.y;
+                pos.x += canvasDelta.x * 0.5f;
+                break;
+
+            case HandleType.ResizeTopRight:
+                size.x += canvasDelta.x;
+                size.y += canvasDelta.y;
+                break;
+
+            case HandleType.ResizeBottomLeft:
+                size.x -= canvasDelta.x;
+                size.y -= canvasDelta.y;
+                pos.x += canvasDelta.x * 0.5f;
+                pos.y += canvasDelta.y * 0.5f;
+                break;
+
+            case HandleType.ResizeBottomRight:
+                size.x += canvasDelta.x;
+                size.y -= canvasDelta.y;
+                pos.y += canvasDelta.y * 0.5f;
+                break;
+
+            case HandleType.Rotate:
+
+                break;
+        }
+
+        selectedRect.sizeDelta = size;
+        selectedRect.anchoredPosition = pos;
+
+        EditorUtility.SetDirty(selectedRect);
+    }
+
+    private void UpdateHandles(Rect rect)
+    {
+        float size = 10f;
+
+        float cx = rect.xMin + rect.width * 0.5f;
+        float cy = rect.yMin + rect.height * 0.5f;
+
+        float x0 = rect.xMin - size * 0.5f;
+        float x1 = cx - size * 0.5f;
+        float x2 = rect.xMax - size * 0.5f;
+
+        float y0 = rect.yMin - size * 0.5f;
+        float y1 = cy - size * 0.5f;
+        float y2 = rect.yMax - size * 0.5f;
+
+        handles[0].rect = new Rect(x0, y0, size, size);
+        handles[0].type = HandleType.ResizeTopLeft;
+
+        handles[1].rect = new Rect(x1, y0, size, size);
+        handles[1].type = HandleType.ResizeTop;
+
+        handles[2].rect = new Rect(x2, y0, size, size);
+        handles[2].type = HandleType.ResizeTopRight;
+
+        handles[3].rect = new Rect(x2, y1, size, size);
+        handles[3].type = HandleType.ResizeRight;
+
+        handles[4].rect = new Rect(x2, y2, size, size);
+        handles[4].type = HandleType.ResizeBottomRight;
+
+        handles[5].rect = new Rect(x1, y2, size, size);
+        handles[5].type = HandleType.ResizeBottom;
+
+        handles[6].rect = new Rect(x0, y2, size, size);
+        handles[6].type = HandleType.ResizeBottomLeft;
+
+        handles[7].rect = new Rect(x0, y1, size, size);
+        handles[7].type = HandleType.ResizeLeft;
+
+        handles[8].rect = new Rect(x1, y0 - 20f, size, size);
+        handles[8].type = HandleType.Rotate;
     }
 
     private bool TryGetPreviewScreenPoint(Vector2 mousePos, out Vector2 previewScreen)
@@ -640,6 +865,9 @@ public class SnapUIViewWindow : EditorWindow
             lastClickedRect = null;
             isDragging = false;
         }
+
+        showGuideX = false;
+        showGuideY = false;
 
         Repaint();
     }
@@ -766,11 +994,7 @@ public class SnapUIViewWindow : EditorWindow
 
         if (bestXDist <= snapThreshold && Mathf.Abs(userMotion.x) < detachDistance)
         {
-            float strength = 1f - (bestXDist / snapThreshold);
-            strength = Mathf.Clamp01(strength);
-
-            float softDelta = bestDeltaX * strength;
-
+            float softDelta = bestDeltaX;
             result.x += softDelta;
 
             showGuideX = true;
@@ -779,10 +1003,7 @@ public class SnapUIViewWindow : EditorWindow
 
         if (bestYDist <= snapThreshold && Mathf.Abs(userMotion.y) < detachDistance)
         {
-            float strength = 1f - (bestYDist / snapThreshold);
-            strength = Mathf.Clamp01(strength);
-
-            float softDeltaY = bestDeltaY * strength;
+            float softDeltaY = bestDeltaY;
             result.y += softDeltaY;
             showGuideY = true;
             guideY = testBounds.center.y + softDeltaY;

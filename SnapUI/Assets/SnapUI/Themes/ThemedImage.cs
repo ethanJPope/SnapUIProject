@@ -1,7 +1,5 @@
 using UnityEngine;
 using UnityEngine.UI;
-using TMPro;
-using UnityEngine.Rendering.Universal;
 
 public class ThemedImage : BaseUIComponent
 {
@@ -24,7 +22,21 @@ public class ThemedImage : BaseUIComponent
 
     public override void RefreshUI()
     {
-        var theme = ThemeManager.ActiveTheme;
+        if (img == null)
+        {
+            img = GetComponent<Image>();
+        }
+
+        if (img == null)
+        {
+            return;
+        }
+
+        UITheme theme = ThemeManager.ActiveTheme;
+        if (theme == null)
+        {
+            return;
+        }
 
         switch (colorTarget)
         {

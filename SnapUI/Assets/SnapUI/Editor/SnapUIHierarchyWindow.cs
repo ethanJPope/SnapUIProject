@@ -5,10 +5,14 @@ using System.Collections.Generic;
 public class SnapUIHierarchyWindow : EditorWindow
 {
     private Canvas[] sceneCanvases;
-    private int selectedCanvasIndex = 0;
+    private int selectedCanvasIndex;
     private Vector2 scrollPos;
 
     private Dictionary<int, bool> foldoutStates = new Dictionary<int, bool>();
+
+    private Transform dragInsertParent;
+    private int dragInsertIndex = -1;
+    private Rect dragInsertRect;
 
     [MenuItem("Window/SnapUI/SnapUI Hierarchy")]
     public static void ShowWindow()
@@ -46,7 +50,7 @@ public class SnapUIHierarchyWindow : EditorWindow
         {
             selectedCanvasIndex = 0;
         }
-        if (selectedCanvasIndex >= sceneCanvases.Length)
+        if (sceneCanvases != null && selectedCanvasIndex >= sceneCanvases.Length)
         {
             selectedCanvasIndex = 0;
         }
@@ -55,6 +59,15 @@ public class SnapUIHierarchyWindow : EditorWindow
 
     private void OnGUI()
     {
+        Event e = Event.current;
+
+        if (e.type == EventType.DragExited)
+        {
+            dragInsertParent = null;
+            dragInsertIndex = -1;
+            Repaint();
+        }
+
         DrawToopbar();
         EditorGUILayout.Space();
 
@@ -78,12 +91,18 @@ public class SnapUIHierarchyWindow : EditorWindow
             }
             return;
         }
-        
+
         using (var scroll = new EditorGUILayout.ScrollViewScope(scrollPos))
         {
             scrollPos = scroll.scrollPosition;
             RectTransform rootRect = targetCanvas.GetComponent<RectTransform>();
             DrawRectTransformNode(rootRect, 0, true);
+
+            if (Event.current.type == EventType.Repaint && dragInsertParent != null && dragInsertIndex >= 0)
+            {
+                Color c = new Color(0.25f, 0.7f, 1f, 0.9f);
+                EditorGUI.DrawRect(dragInsertRect, c);
+            }
         }
     }
 
@@ -91,11 +110,22 @@ public class SnapUIHierarchyWindow : EditorWindow
     {
         using (new EditorGUILayout.HorizontalScope(EditorStyles.toolbar))
         {
+            if (sceneCanvases == null || sceneCanvases.Length == 0)
+            {
+                GUILayout.FlexibleSpace();
+                if (GUILayout.Button("Refresh", EditorStyles.toolbarButton, GUILayout.Width(70)))
+                {
+                    RefreshCanvases();
+                }
+                return;
+            }
+
             string[] names = new string[sceneCanvases.Length];
             for (int i = 0; i < sceneCanvases.Length; i++)
             {
                 names[i] = sceneCanvases[i].name;
             }
+
             int newIndex = EditorGUILayout.Popup(selectedCanvasIndex, names, EditorStyles.toolbarPopup);
             if (newIndex != selectedCanvasIndex)
             {
@@ -140,23 +170,138 @@ public class SnapUIHierarchyWindow : EditorWindow
         rowRect.x += indent * indentWidth;
         rowRect.width -= indent * indentWidth;
 
+        Rect contentRect = rowRect;
+
         if (hasChildren)
         {
-            Rect foldoutRect = new Rect(rowRect.x, rowRect.y, 14f, rowRect.height);
+            Rect foldoutRect = new Rect(contentRect.x, contentRect.y, 14f, contentRect.height);
             foldoutStates[id] = EditorGUI.Foldout(foldoutRect, foldoutStates[id], GUIContent.none);
-            rowRect.x += 14f;
-            rowRect.width -= 14f;
+            contentRect.x += 14f;
+            contentRect.width -= 14f;
+        }
+
+        Event e = Event.current;
+
+        if (e.type == EventType.MouseDown && e.button == 0 && rowRect.Contains(e.mousePosition))
+        {
+            Selection.activeGameObject = rect.gameObject;
+            DragAndDrop.PrepareStartDrag();
+            DragAndDrop.objectReferences = new Object[] { rect.gameObject };
+            DragAndDrop.StartDrag(rect.gameObject.name);
+            e.Use();
+        }
+
+        if (e.type == EventType.DragUpdated || e.type == EventType.DragPerform)
+        {
+            GameObject dragGO = null;
+            if (DragAndDrop.objectReferences != null && DragAndDrop.objectReferences.Length > 0)
+            {
+                dragGO = DragAndDrop.objectReferences[0] as GameObject;
+            }
+
+            RectTransform dragRT = dragGO != null ? dragGO.GetComponent<RectTransform>() : null;
+
+            if (dragRT != null && dragRT != rect && rowRect.Contains(e.mousePosition))
+            {
+                bool top = e.mousePosition.y < rowRect.y + rowRect.height * 0.25f;
+                bool bottom = e.mousePosition.y > rowRect.y + rowRect.height * 0.75f;
+                bool middle = !top && !bottom;
+
+                Transform targetParent = null;
+                int targetIndex = 0;
+                bool valid = true;
+
+                if (middle)
+                {
+                    targetParent = rect;
+                    targetIndex = rect.childCount;
+                }
+                else
+                {
+                    targetParent = rect.parent;
+                    if (targetParent == null)
+                    {
+                        valid = false;
+                    }
+                    else
+                    {
+                        targetIndex = rect.GetSiblingIndex() + (bottom ? 1 : 0);
+                    }
+                }
+
+                if (valid && (targetParent == dragRT || IsDescendant(dragRT, targetParent)))
+                {
+                    valid = false;
+                }
+
+                if (valid)
+                {
+                    dragInsertParent = targetParent;
+                    dragInsertIndex = targetIndex;
+
+                    float y;
+                    if (middle)
+                    {
+                        y = rowRect.center.y;
+                    }
+                    else if (bottom)
+                    {
+                        y = rowRect.yMax - 1f;
+                    }
+                    else
+                    {
+                        y = rowRect.y;
+                    }
+
+                    dragInsertRect = new Rect(rowRect.x, y, rowRect.width, 2f);
+
+                    DragAndDrop.visualMode = DragAndDropVisualMode.Move;
+
+                    if (e.type == EventType.DragPerform)
+                    {
+                        DragAndDrop.AcceptDrag();
+
+                        Undo.RecordObject(dragRT, "Reparent UI Element");
+
+                        if (dragRT.parent != targetParent)
+                        {
+                            dragRT.SetParent(targetParent, false);
+                        }
+
+                        int maxIndex = targetParent != null ? targetParent.childCount - 1 : 0;
+                        int clampedIndex = Mathf.Clamp(dragInsertIndex, 0, maxIndex);
+                        dragRT.SetSiblingIndex(clampedIndex);
+
+                        dragInsertParent = null;
+                        dragInsertIndex = -1;
+
+                        EditorApplication.RepaintHierarchyWindow();
+                        Repaint();
+
+                        e.Use();
+                    }
+                    else
+                    {
+                        Repaint();
+                        e.Use();
+                    }
+                }
+                else
+                {
+                    DragAndDrop.visualMode = DragAndDropVisualMode.Rejected;
+                }
+            }
         }
 
         GUIContent labelContent = EditorGUIUtility.ObjectContent(rect.gameObject, typeof(GameObject));
         labelContent.text = rect.gameObject.name;
 
-        if (GUI.Button(rowRect, GUIContent.none, GUIStyle.none))
+        if (GUI.Button(contentRect, GUIContent.none, GUIStyle.none))
         {
             Selection.activeGameObject = rect.gameObject;
         }
 
-        EditorGUI.LabelField(rowRect, labelContent, isRoot ? EditorStyles.boldLabel : EditorStyles.label);
+        EditorGUI.LabelField(contentRect, labelContent, isRoot ? EditorStyles.boldLabel : EditorStyles.label);
 
         if (hasChildren && foldoutStates[id])
         {
@@ -170,5 +315,16 @@ public class SnapUIHierarchyWindow : EditorWindow
             }
         }
     }
-}
 
+    private bool IsDescendant(Transform parent, Transform possibleDescendant)
+    {
+        if (parent == null || possibleDescendant == null) return false;
+        Transform t = possibleDescendant;
+        while (t != null)
+        {
+            if (t == parent) return true;
+            t = t.parent;
+        }
+        return false;
+    }
+}
