@@ -1,6 +1,7 @@
 A quick and easy utility to make good looking UI in Unity. I created this project to make it easier to make good looking UI. In the end I was able to add 3 new custom Unity windows. Through this proccess of making this addon to Unity I learned a lot about taking my time.
 Through the process of making this project I gave myself the challenge of not using any form of AI, whether it was resarch or when I was stuck and needed help. So instead I did my own resarch, and in the end I learned a lot more this way. Before I only really used AI when I was stuck,
 but when I completly removed it from my workstyle for this week I noticed I learned a lot more and faster. Even though I spent a lot more time than I would have used AI, I think it was worth it.
+https://www.youtube.com/watch?v=uJgM5p0UxqU&feature=youtu.be
 # SnapUI
 
 ## SnapUI View:
