@@ -2,6 +2,8 @@ A quick and easy utility to make good looking UI in Unity. I created this projec
 Through the process of making this project I gave myself the challenge of not using any form of AI, whether it was resarch or when I was stuck and needed help. So instead I did my own resarch, and in the end I learned a lot more this way. Before I only really used AI when I was stuck,
 but when I completly removed it from my workstyle for this week I noticed I learned a lot more and faster. Even though I spent a lot more time than I would have used AI, I think it was worth it.
 https://www.youtube.com/watch?v=uJgM5p0UxqU&feature=youtu.be
+
+To use this project open unity, go to the package manager, then click add "Install package from git url", and paste this link: https://github.com/ethan/SnapUI.git
 # SnapUI
 
 ## SnapUI View:
