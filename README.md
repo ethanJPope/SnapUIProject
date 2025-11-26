@@ -3,7 +3,7 @@ Through the process of making this project I gave myself the challenge of not us
 but when I completly removed it from my workstyle for this week I noticed I learned a lot more and faster. Even though I spent a lot more time than I would have used AI, I think it was worth it.
 https://www.youtube.com/watch?v=uJgM5p0UxqU&feature=youtu.be
 
-To use this project open unity, go to the package manager, then click add "Install package from git url", and paste this link: https://github.com/ethan/SnapUI.git
+To use this project open unity, go to the package manager, then click add "Install package from git url", and paste this link: https://github.com/ethanJPope/SnapUI.git
 # SnapUI
 
 ## SnapUI View:
